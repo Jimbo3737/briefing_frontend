@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
-// ─── Sample articles ───────────────────────────────────────────────────────────
+const BACKEND = "https://briefing-backend-production-999.up.railway.app";
+
+// ─── Sample articles (shown as fallback until Gmail loads) ─────────────────────
 const SAMPLE_ARTICLES = [
   { id: 1, source: "axios", publication: "Axios", size: "large", category: "AI & Tech", headline: "OpenAI's latest model rewrites the rules on reasoning", excerpt: "The new model demonstrates a leap in multi-step logical reasoning, outperforming human experts on several benchmark tests for the first time.", body: "OpenAI's newest model represents a fundamental shift in how large language models approach complex reasoning tasks. Unlike previous iterations that relied heavily on pattern matching, this system employs a novel chain-of-thought architecture that breaks problems into discrete logical steps before synthesising a final answer.\n\nIn independent benchmarks conducted by Stanford researchers, the model outperformed human experts on legal reasoning, advanced mathematics, and scientific hypothesis generation — three domains previously considered safely in human territory.\n\nThe implications for enterprise software are significant. Several Fortune 500 companies are already piloting the model for contract analysis and financial modelling, with early results suggesting 60–70% reductions in analyst time on routine tasks.", time: "2h ago", readTime: "4 min", color: "#FF4D4D" },
   { id: 2, source: "ft", publication: "Financial Times", size: "medium", category: "Markets", headline: "Fed signals cautious path as inflation data surprises", excerpt: "Federal Reserve officials struck a measured tone following better-than-expected CPI figures, suggesting rate cuts remain on the horizon.", body: "Federal Reserve policymakers signalled continued patience on monetary easing after March's consumer price index came in 0.2 percentage points below consensus forecasts. Core inflation fell to 3.1%, its lowest reading since early 2021.\n\nChair Jerome Powell noted the data was encouraging but stopped short of committing to a June cut timeline. Markets rallied on the news, with the S&P 500 closing up 1.4% and the 10-year Treasury yield falling 12 basis points.\n\nAnalysts at Goldman Sachs now put the probability of a June rate reduction at 68%, up from 51% before the data release.", time: "3h ago", readTime: "3 min", color: "#F9A825" },
@@ -589,6 +591,9 @@ export default function App() {
   const [justSaved, setJustSaved] = useState(false);
   const [userProfile, setUserProfile] = useState({ name: "", role: "", context: "", interests: "" });
   const [profiles, setProfiles] = useState([DEFAULT_PROFILE]);
+  const [articles, setArticles] = useState(SAMPLE_ARTICLES);
+  const [gmailConnected, setGmailConnected] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const T = dark ? DARK : LIGHT;
 
@@ -604,6 +609,26 @@ export default function App() {
         const p = await window.storage.get("briefing-profiles");
         if (p?.value) setProfiles(JSON.parse(p.value));
       } catch (_) {}
+
+      // Fetch real articles from backend
+      try {
+        const statusRes = await fetch(`${BACKEND}/auth/status`);
+        const { gmail_connected } = await statusRes.json();
+        setGmailConnected(gmail_connected);
+        if (gmail_connected) {
+          const articlesRes = await fetch(`${BACKEND}/articles?max_results=50`);
+          const data = await articlesRes.json();
+          if (data.articles?.length > 0) {
+            const sized = data.articles.map((a, i) => ({
+              ...a,
+              size: i === 0 ? "large" : i % 3 === 0 ? "large" : i % 2 === 0 ? "medium" : "small",
+              bgGradient: "linear-gradient(145deg, #111 0%, #181818 100%)",
+            }));
+            setArticles(sized);
+          }
+        }
+      } catch (_) {}
+      setLoading(false);
     })();
   }, []);
 
@@ -628,7 +653,8 @@ export default function App() {
     } catch (_) {}
   };
 
-  const filtered = source === "all" ? SAMPLE_ARTICLES : SAMPLE_ARTICLES.filter(a => a.source === source);
+  const filtered = source === "all" ? articles : articles.filter(a => a.source === source);
+  const dynamicSources = [...new Map(articles.map(a => [a.source, { id: a.source, name: a.publication, color: a.color || "#888" }])).values()];
   const today = new Date().toLocaleDateString("en-NZ", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
   const NAV = [
@@ -664,8 +690,10 @@ export default function App() {
             ))}
           </nav>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {loading && <span style={{ fontSize: 9, color: T.textFaint, fontFamily: mono }}>Loading...</span>}
+            {!loading && gmailConnected && <span style={{ fontSize: 9, color: "#4CAF50", fontFamily: mono }}>● GMAIL {articles.length} emails</span>}
+            {!loading && !gmailConnected && <a href={`${BACKEND}/auth/gmail`} style={{ fontSize: 9, color: "#FF6719", fontFamily: mono, textDecoration: "none", border: "1px solid #FF671940", borderRadius: 4, padding: "3px 8px" }}>Connect Gmail</a>}
             <button onClick={toggleDark} style={{ background: T.chip, border: `1px solid ${T.chipBorder}`, borderRadius: 6, padding: "5px 12px", color: T.textMuted, cursor: "pointer", fontFamily: mono, fontSize: 10, transition: "all 0.2s" }}>{dark ? "☀ Light" : "◑ Dark"}</button>
-            <span style={{ fontSize: 9, color: T.textFaint, display: "none" }}>{today}</span>
           </div>
         </header>
 
@@ -674,7 +702,9 @@ export default function App() {
           <div onClick={() => setSummaryOpen(!summaryOpen)} style={{ background: T.summaryBg, borderBottom: `1px solid ${T.border2}`, padding: "11px 24px", cursor: "pointer", display: "flex", gap: 12, alignItems: "flex-start", transition: "background 0.25s" }}>
             <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.18em", color: T.textFaint, whiteSpace: "nowrap", paddingTop: 2 }}>TODAY</span>
             <p style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.75, fontFamily: lora, overflow: "hidden", maxHeight: summaryOpen ? 120 : 20, transition: "max-height 0.3s ease", flex: 1 }}>
-              Markets steadied after Fed commentary eased inflation fears. AI competition intensified with new model releases. Reserve Bank holds rates as NZ housing shows signs of recovery. Seed-stage valuations finally correcting toward pre-2021 norms.
+              {gmailConnected
+                ? `${articles.length} newsletters loaded from your Gmail. Go to Briefings to generate your AI summary.`
+                : "Showing sample articles. Click 'Connect Gmail' in the header to load your real newsletters."}
             </p>
             <span style={{ color: T.textFaint, fontSize: 10, whiteSpace: "nowrap" }}>{summaryOpen ? "▲" : "▼"}</span>
           </div>
@@ -685,7 +715,7 @@ export default function App() {
           {view === "feed" && (
             <aside style={{ width: 158, padding: "18px 0", borderRight: `1px solid ${T.border2}`, position: "sticky", top: 56, height: "calc(100vh - 56px)", flexShrink: 0, overflowY: "auto", background: T.sidebar, transition: "background 0.25s" }}>
               <div style={{ fontSize: 9, color: T.textFaint, letterSpacing: "0.2em", padding: "0 14px 10px" }}>SOURCES</div>
-              {[{ id: "all", name: "All Stories", color: T.text }, ...ALL_SOURCES].map(s => (
+              {[{ id: "all", name: "All Stories", color: T.text }, ...dynamicSources].map(s => (
                 <button key={s.id} onClick={() => setSource(s.id)} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 14px", background: source === s.id ? T.active : "none", border: "none", borderLeft: source === s.id ? `2px solid ${s.color}` : "2px solid transparent", cursor: "pointer", color: source === s.id ? T.text : T.textMuted, fontSize: 11, fontFamily: mono, textAlign: "left", transition: "all 0.12s" }}>
                   {s.id !== "all" && <span style={{ width: 6, height: 6, borderRadius: "50%", background: s.color, flexShrink: 0, opacity: source === s.id ? 1 : 0.4 }} />}
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
